@@ -1,0 +1,22 @@
+---
+- name: Add secrets to GitHub repository
+  hosts: local
+  connection: local
+  vars:
+    repo_name: "your-username/your-repo-name"
+    secrets:
+      DOCKERHUB_USERNAME: "your_dockerhub_username"
+      DOCKERHUB_TOKEN: "your_dockerhub_token"
+      EC2_HOST: "your_ec2_host"
+      EC2_USER: "ubuntu"
+      SSH_KEY: "{{ lookup('file', 'angular-key.pem') }}"
+  tasks:
+    - name: Add each secret using GitHub CLI
+      shell: |
+        echo "{{ item.value }}" | gh secret set {{ item.key }} -R {{ repo_name }} --body -
+      loop: "{{ secrets | dict2items }}"
+      register: secret_results
+
+    - name: Show secret creation results
+      debug:
+        var: secret_results.results

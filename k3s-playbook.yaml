@@ -1,0 +1,72 @@
+---
+- name: Install k3s on Ubuntu EC2 instance
+  hosts: ec2
+  remote_user: ubuntu
+  become: yes
+  vars:
+    k3s_version: ""  
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name: curl
+        state: present
+
+    - name: Install k3s
+      shell: |
+        curl -sfL https://get.k3s.io | \
+        INSTALL_K3S_EXEC="--tls-san {{ ansible_host }}" {{ 'INSTALL_K3S_VERSION=' + k3s_version if k3s_version else '' }} sh -
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: Enable and start k3s service
+      systemd:
+        name: k3s
+        state: started
+        enabled: yes
+
+    - name: Wait for k3s to be ready
+      shell: |
+        until k3s kubectl get nodes; do
+          echo "Waiting for k3s..."
+          sleep 5
+        done
+      register: k3s_ready_output
+      changed_when: false
+
+    - name: Display k3s node status
+      debug:
+        var: k3s_ready_output.stdout
+
+    - name: Ensure symlink for kubeconfig exists in ubuntu home
+      file:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: /home/ubuntu/k3s.yaml
+        state: link
+
+    - name: Set kubeconfig file ownership and permissions
+      file:
+        path: /etc/rancher/k3s/k3s.yaml
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+
+    - name: Update kubeconfig server IP to EC2 public IP
+      lineinfile:
+        path: /home/ubuntu/k3s.yaml
+        regexp: '^    server: https://.*:6443$'
+        line: "    server: https://{{ ansible_host }}:6443"
+
+    - name: Copy deployment.yaml to EC2 instance
+      copy:
+        src: deployment.yaml
+        dest: /home/ubuntu/deployment.yaml
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+        force: no
